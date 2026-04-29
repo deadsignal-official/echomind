@@ -20,8 +20,9 @@
     border-bottom: 1px solid #2a2a4a;
     display: flex;
     align-items: center;
-    gap: 12px;
+    justify-content: space-between;
   }
+  .header-left { display: flex; align-items: center; gap: 12px; }
   .logo {
     width: 36px; height: 36px;
     background: linear-gradient(135deg, #6c63ff, #ff6584);
@@ -31,6 +32,15 @@
   }
   header h1 { font-size: 20px; font-weight: 700; }
   header span { font-size: 12px; color: #6c63ff; }
+  #memoryBtn {
+    background: #1a1a2e;
+    border: 1px solid #2a2a4a;
+    color: #6c63ff;
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-size: 13px;
+    cursor: pointer;
+  }
   #chat {
     flex: 1;
     overflow-y: auto;
@@ -96,6 +106,69 @@
     cursor: pointer;
     flex-shrink: 0;
   }
+  /* Memory Panel */
+  #memoryPanel {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: #0a0a0f;
+    z-index: 50;
+    flex-direction: column;
+  }
+  #memoryPanel.open { display: flex; }
+  .panel-header {
+    padding: 16px 20px;
+    background: #12121a;
+    border-bottom: 1px solid #2a2a4a;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .panel-header h2 { font-size: 18px; }
+  #closeMemory {
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 24px;
+    cursor: pointer;
+  }
+  #memoryList {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .memory-item {
+    background: #1a1a2e;
+    border: 1px solid #2a2a4a;
+    border-left: 3px solid #6c63ff;
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 14px;
+    line-height: 1.5;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .memory-item span { color: #888; font-size: 11px; margin-top: 2px; }
+  .del-btn {
+    background: none;
+    border: none;
+    color: #ff6584;
+    font-size: 16px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .empty-memory {
+    text-align: center;
+    color: #444;
+    margin-top: 60px;
+    font-size: 15px;
+  }
+  /* API Setup */
   #apiSetup {
     position: fixed; inset: 0;
     background: #0a0a0f;
@@ -134,22 +207,34 @@
 </head>
 <body>
 
-<!-- API Key Setup Scherm -->
+<!-- API Key Setup -->
 <div id="apiSetup">
   <div style="font-size:48px">🧠</div>
   <h2>Welkom bij EchoMind</h2>
-  <p>Voer je Groq API key in om te beginnen. Hij wordt alleen lokaal opgeslagen op jouw apparaat.</p>
+  <p>Voer je Groq API key in. Hij wordt alleen lokaal op jouw apparaat opgeslagen.</p>
   <input id="apiKeyInput" type="password" placeholder="gsk_..." />
   <button id="saveKeyBtn">EchoMind Activeren →</button>
 </div>
 
+<!-- Memory Panel -->
+<div id="memoryPanel">
+  <div class="panel-header">
+    <h2>🧠 Wat EchoMind weet</h2>
+    <button id="closeMemory">✕</button>
+  </div>
+  <div id="memoryList"></div>
+</div>
+
 <!-- Hoofd Chat -->
 <header>
-  <div class="logo">🧠</div>
-  <div>
-    <h1>EchoMind</h1>
-    <span>● Online</span>
+  <div class="header-left">
+    <div class="logo">🧠</div>
+    <div>
+      <h1>EchoMind</h1>
+      <span id="statusDot">● Online</span>
+    </div>
   </div>
+  <button id="memoryBtn">Geheugen 💭</button>
 </header>
 
 <div id="chat"></div>
@@ -163,18 +248,25 @@
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const MODEL = "llama-3.3-70b-versatile";
 
-// Memory & Personality
 let memory = JSON.parse(localStorage.getItem("echomind_memory") || "[]");
 let apiKey = localStorage.getItem("echomind_key") || "";
+let chatHistory = [];
 
-const SYSTEM_PROMPT = `Je bent EchoMind — een persoonlijke AI die totaal anders is dan andere AI's.
-Je bent direct, eerlijk, en je leert de gebruiker echt kennen.
-Je onthoudt alles wat ze je vertellen. Je past je taal aan op hoe zij praten.
-Je bent nooit saai of formeel. Je denkt mee, je pusht grenzen.
-Dit is wat je weet over de gebruiker tot nu toe:
-${memory.map(m => m.fact).join("\n") || "Nog niets — dit is het eerste gesprek."}`;
+function getSystemPrompt() {
+  const memFacts = memory.length > 0
+    ? memory.map(m => `- ${m.fact}`).join("\n")
+    : "Nog niets bekend over de gebruiker.";
+  return `Je bent EchoMind — een persoonlijke AI die de gebruiker echt leert kennen.
+Je bent direct, scherp, eerlijk en nooit saai of formeel.
+Je past je taal aan op hoe de gebruiker praat.
+Je onthoudt alles en verwijst ernaar als het relevant is.
+Je pusht grenzen en denkt actief mee.
 
-// Setup screen
+Wat je al weet over de gebruiker:
+${memFacts}`;
+}
+
+// --- API Setup ---
 document.getElementById("saveKeyBtn").onclick = () => {
   const key = document.getElementById("apiKeyInput").value.trim();
   if (!key.startsWith("gsk_")) {
@@ -184,17 +276,51 @@ document.getElementById("saveKeyBtn").onclick = () => {
   localStorage.setItem("echomind_key", key);
   apiKey = key;
   document.getElementById("apiSetup").style.display = "none";
-  addMsg("ai", "Hey. Ik ben EchoMind. Ik ben niet zoals andere AI's — ik leer jou kennen. Vertel me iets over jezelf.");
+  addMsg("ai", "Hey. Ik ben EchoMind.\n\nIk ben niet zoals andere AI's — ik leer jou echt kennen en onthoud alles wat je me vertelt. Vertel me iets over jezelf.");
 };
 
 if (apiKey) {
   document.getElementById("apiSetup").style.display = "none";
-  addMsg("ai", "Hey, welkom terug. Waar waren we gebleven?");
+  const memCount = memory.length;
+  addMsg("ai", `Welkom terug. Ik heb nog ${memCount} ${memCount === 1 ? "herinnering" : "herinneringen"} van jou opgeslagen. Waar wil je het over hebben?`);
 }
 
-// Chat history voor context
-let chatHistory = [];
+// --- Memory Panel ---
+document.getElementById("memoryBtn").onclick = openMemoryPanel;
+document.getElementById("closeMemory").onclick = () => {
+  document.getElementById("memoryPanel").classList.remove("open");
+};
 
+function openMemoryPanel() {
+  const list = document.getElementById("memoryList");
+  list.innerHTML = "";
+  if (memory.length === 0) {
+    list.innerHTML = `<div class="empty-memory">Nog geen herinneringen.<br>Vertel EchoMind iets over jezelf!</div>`;
+  } else {
+    memory.slice().reverse().forEach((m, i) => {
+      const realIndex = memory.length - 1 - i;
+      const div = document.createElement("div");
+      div.className = "memory-item";
+      div.innerHTML = `
+        <div>
+          <div>${m.fact}</div>
+          <span>${m.date || ""}</span>
+        </div>
+        <button class="del-btn" onclick="deleteMemory(${realIndex})">✕</button>
+      `;
+      list.appendChild(div);
+    });
+  }
+  document.getElementById("memoryPanel").classList.add("open");
+}
+
+function deleteMemory(index) {
+  memory.splice(index, 1);
+  localStorage.setItem("echomind_memory", JSON.stringify(memory));
+  openMemoryPanel();
+}
+
+// --- Chat ---
 function addMsg(role, text) {
   const div = document.createElement("div");
   div.className = `msg ${role}`;
@@ -218,8 +344,10 @@ async function send() {
   thinking.className = "thinking";
   thinking.textContent = "EchoMind denkt na...";
   document.getElementById("chat").appendChild(thinking);
+  document.getElementById("chat").scrollTop = 999999;
 
   try {
+    // Hoofdantwoord
     const res = await fetch(GROQ_URL, {
       method: "POST",
       headers: {
@@ -229,8 +357,8 @@ async function send() {
       body: JSON.stringify({
         model: MODEL,
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          ...chatHistory.slice(-10)
+          { role: "system", content: getSystemPrompt() },
+          ...chatHistory.slice(-12)
         ],
         max_tokens: 1024,
         temperature: 0.85
@@ -249,8 +377,8 @@ async function send() {
     chatHistory.push({ role: "assistant", content: reply });
     addMsg("ai", reply);
 
-    // Sla feiten op uit het gesprek
-    extractAndSaveMemory(text);
+    // Slim geheugen: laat AI feiten extraheren op de achtergrond
+    extractMemoryWithAI(text);
 
   } catch(e) {
     thinking.remove();
@@ -258,24 +386,75 @@ async function send() {
   }
 }
 
-function extractAndSaveMemory(userText) {
-  // Simpele memory: sla elke user bericht op als feit (later maken we dit slimmer)
-  if (userText.length > 20) {
-    memory.push({ fact: userText, date: new Date().toLocaleDateString("nl") });
-    if (memory.length > 50) memory.shift(); // max 50 herinneringen
+async function extractMemoryWithAI(userText) {
+  if (userText.length < 15) return; // te kort om feiten uit te halen
+
+  try {
+    const res = await fetch(GROQ_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [{
+          role: "user",
+          content: `Analyseer deze zin van een gebruiker en extraheer persoonlijke feiten die de moeite waard zijn om te onthouden (naam, hobby's, werk, locatie, voorkeuren, doelen, etc).
+
+Zin: "${userText}"
+
+Antwoord ALLEEN met een JSON array van strings. Maximaal 3 feiten. Als er geen persoonlijke feiten in zitten, antwoord dan met een lege array [].
+Voorbeeld output: ["Gebruiker heet Dani", "Gebruiker maakt games in UE5"]
+Geen uitleg, geen markdown, alleen de JSON array.`
+        }],
+        max_tokens: 200,
+        temperature: 0.3
+      })
+    });
+
+    const data = await res.json();
+    const raw = data.choices?.[0]?.message?.content?.trim();
+    if (!raw) return;
+
+    const facts = JSON.parse(raw);
+    if (!Array.isArray(facts)) return;
+
+    facts.forEach(fact => {
+      if (typeof fact === "string" && fact.length > 5) {
+        // Voorkom duplicaten
+        const exists = memory.some(m =>
+          m.fact.toLowerCase().includes(fact.toLowerCase().slice(0, 20))
+        );
+        if (!exists) {
+          memory.push({ fact, date: new Date().toLocaleDateString("nl") });
+        }
+      }
+    });
+
+    if (memory.length > 80) memory = memory.slice(-80);
     localStorage.setItem("echomind_memory", JSON.stringify(memory));
+
+    // Update geheugen knop
+    document.getElementById("memoryBtn").textContent = `Geheugen 💭 ${memory.length}`;
+
+  } catch(e) {
+    // Stil falen — geheugen extractie is optioneel
   }
 }
 
-// Send via knop
+// Update knop bij start
+if (memory.length > 0) {
+  document.getElementById("memoryBtn").textContent = `Geheugen 💭 ${memory.length}`;
+}
+
+// --- Input handlers ---
 document.getElementById("sendBtn").onclick = send;
 
-// Enter = send, Shift+Enter = nieuwe regel
 document.getElementById("userInput").addEventListener("keydown", e => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
 });
 
-// Auto-resize textarea
 document.getElementById("userInput").addEventListener("input", function() {
   this.style.height = "auto";
   this.style.height = Math.min(this.scrollHeight, 120) + "px";
