@@ -1,0 +1,2 @@
+# echomind
+My personal AI
